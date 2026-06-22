@@ -1,5 +1,10 @@
 {
+  "name": "telegram-bot",
+  "version": "1.0.0",
+  "type": "module",
   "dependencies": {
-    "redis": "^6.0.0"
+    "redis": "^6.0.0",
+    "@vercel/kv": "^1.0.1",
+    "telegraf": "^4.16.3"
   }
 }
