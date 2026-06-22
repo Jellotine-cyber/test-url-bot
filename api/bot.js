@@ -1,16 +1,35 @@
 import { Telegraf } from 'telegraf';
 import { Redis } from '@upstash/redis';
 
-// 1. Initialize Redis using your single REDIS_URL environment variable
-const redis = Redis.fromEnv({
-    REDIS_URL: process.env.REDIS_URL,
-    REDIS_TOKEN: process.env.REDIS_URL ? process.env.REDIS_URL.split('@')[1].split(':')[1] : '' 
-});
+// --- CLEAN REDIS STRING PARSING ---
+let kv;
+const redisUrlString = process.env.REDIS_URL || '';
 
-// Explicit fallback: If fromEnv struggles, parse it cleanly manually
-const token = process.env.REDIS_URL ? process.env.REDIS_URL.split('//')[1].split(':')[0] : '';
-const url = process.env.REDIS_URL ? `https://${process.env.REDIS_URL.split('@')[1]}` : '';
-const kv = new Redis({ url: url, token: token });
+if (redisUrlString) {
+    try {
+        // Parse the standard redis://default:password@host:port format
+        // Extracting host and password
+        const withoutProtocol = redisUrlString.replace('redis://', '');
+        const [credentials, hostPort] = withoutProtocol.split('@');
+        const password = credentials.split(':')[1];
+        
+        // Build the correct HTTP REST URL that Upstash expects
+        const restUrl = `https://${hostPort}`;
+        
+        kv = new Redis({ 
+            url: restUrl, 
+            token: password 
+        });
+    } catch (parseError) {
+        console.error('Failed to parse REDIS_URL string:', parseError);
+    }
+}
+
+// Fallback to empty client if something goes wrong to prevent complete server crash
+if (!kv) {
+    kv = Redis.fromEnv();
+}
+// ----------------------------------
 
 // 2. Initialize the Telegraf bot
 const bot = new Telegraf(process.env.BOT_TOKEN);
