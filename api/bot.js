@@ -68,13 +68,25 @@ bot.command('check', async (ctx) => {
         const results = await Promise.all(
             Object.entries(sites).map(async ([name, url]) => {
                 try {
-                    const res = await fetch(url, { method: 'GET', redirect: 'follow' });
+                    // We set redirect to 'follow' so it completely processes the Outlook login hop
+                    const res = await fetch(url, { 
+                        method: 'GET', 
+                        redirect: 'follow',
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                    });
 
-                    if (res.status === 200) {
-                        return `✅ Connection to *${name}* (${url}) is successful with status '200'`;
+                    // Match your criteria: If it's explicitly 404, it's missing/dead.
+                    if (res.status === 404) {
+                        return `❌ Connection to *${name}* (${url}) failed: 404 Page Not Found`;
                     }
-                    return `⚠️ Connection to *${name}* (${url}) failed with status '${res.status}'`;
+
+                    // Treat every other response (200, 302, etc.) as a functional server sign of life
+                    return `✅ Connection to *${name}* is successful! (Status: ${res.status})`;
+
                 } catch (err) {
+                    // Network level crashes (DNS failures, connection timeouts, refused connections)
                     return `❌ Connection to *${name}* (${url}) failed: ${err.message}`;
                 }
             })
