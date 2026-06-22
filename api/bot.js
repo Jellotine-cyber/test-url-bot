@@ -64,35 +64,31 @@ bot.command('check', async (ctx) => {
             return ctx.reply("No saved URLs to check. Use /save first.");
         }
 
-        await ctx.reply("🔄 Checking connection status via cloud proxy...");
+        await ctx.reply("🔄 Running isolated direct browser-handshake check...");
 
         const results = await Promise.all(
             Object.entries(sites).map(async ([name, url]) => {
                 try {
-                    // Route the URL through a free public proxy wrapper to mask Vercel's IP
-                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-                    
-                    const res = await fetch(proxyUrl, {
-                        method: 'GET',
+                    // Stripping out the proxy completely. Going direct from Vercel's SG hub!
+                    const res = await fetch(url, { 
+                        method: 'GET', 
+                        redirect: 'follow',
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'en-US,en;q=0.5',
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
                         }
                     });
 
-                    if (!res.ok) {
-                        return `❌ Connection to *${name}* failed: Proxy server error (${res.status})`;
-                    }
-
-                    const data = await res.json();
-                    
-                    // AllOrigins wraps the final target response status in data.status
-                    const finalStatus = data.status ? data.status.http_code : 200;
-
-                    if (finalStatus === 404) {
+                    // If it specifically throws a 404, it means the domain is alive but page path is missing
+                    if (res.status === 404) {
                         return `❌ Connection to *${name}* (${url}) failed: 404 Page Not Found`;
                     }
 
-                    return `✅ Connection to *${name}* is successful! (Status: ${finalStatus})`;
+                    // A response of 200, 302, or even a 500 from your own server means the server is UP and drawing power!
+                    return `✅ Connection to *${name}* is successful! (Status: ${res.status})`;
 
                 } catch (err) {
                     return `❌ Connection to *${name}* failed: \`${err.message}\``;
