@@ -56,6 +56,8 @@ bot.command('savedurl', async (ctx) => {
 });
 import https from 'https'; // Add this import at the very top of your api/bot.js file
 
+import net from 'net'; // Add this import at the very top of your api/bot.js file
+
 bot.command('check', async (ctx) => {
     try {
         const sites = await kv.hgetall(`user:${ctx.chat.id}:sites`);
@@ -64,35 +66,49 @@ bot.command('check', async (ctx) => {
             return ctx.reply("No saved URLs to check. Use /save first.");
         }
 
-        await ctx.reply("🔄 Running isolated direct browser-handshake check...");
+        await ctx.reply("📡 Running raw TCP port connectivity test...");
 
         const results = await Promise.all(
-            Object.entries(sites).map(async ([name, url]) => {
-                try {
-                    // Stripping out the proxy completely. Going direct from Vercel's SG hub!
-                    const res = await fetch(url, { 
-                        method: 'GET', 
-                        redirect: 'follow',
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                            'Accept-Language': 'en-US,en;q=0.5',
-                            'Cache-Control': 'no-cache',
-                            'Pragma': 'no-cache'
+            Object.entries(sites).map(async ([name, urlString]) => {
+                return new Promise((resolve) => {
+                    try {
+                        // 1. Clean and parse the URL to extract the hostname
+                        let cleanUrl = urlString.trim();
+                        if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                            cleanUrl = 'https://' + cleanUrl;
                         }
-                    });
+                        
+                        const parsedUrl = new URL(cleanUrl);
+                        const host = parsedUrl.hostname;
+                        // Default to port 443 for https, or 80 for http
+                        const port = parsedUrl.port ? parseInt(parsedUrl.port) : (parsedUrl.protocol === 'https:' ? 443 : 80);
 
-                    // If it specifically throws a 404, it means the domain is alive but page path is missing
-                    if (res.status === 404) {
-                        return `❌ Connection to *${name}* (${url}) failed: 404 Page Not Found`;
+                        // 2. Open a raw TCP socket connection (Just like Test-NetConnection)
+                        const socket = new net.Socket();
+                        
+                        // Set a strict 7-second timeout so the serverless function doesn't hang
+                        socket.setTimeout(7000);
+
+                        socket.connect(port, host, () => {
+                            // If this triggers, the port is open and reachable!
+                            socket.destroy(); 
+                            resolve(`✅ *${name}* (${host}:${port}) is online! TCP connection succeeded.`);
+                        });
+
+                        socket.on('error', (err) => {
+                            socket.destroy();
+                            resolve(`❌ *${name}* (${host}:${port}) failed. Reason: \`${err.message}\``);
+                        });
+
+                        socket.on('timeout', () => {
+                            socket.destroy();
+                            resolve(`❌ *${name}* (${host}:${port}) failed. Reason: \`Connection Timeout (Blocked)\``);
+                        });
+
+                    } catch (err) {
+                        resolve(`❌ *${name}* invalid URL format: \`${err.message}\``);
                     }
-
-                    // A response of 200, 302, or even a 500 from your own server means the server is UP and drawing power!
-                    return `✅ Connection to *${name}* is successful! (Status: ${res.status})`;
-
-                } catch (err) {
-                    return `❌ Connection to *${name}* failed: \`${err.message}\``;
-                }
+                });
             })
         );
 
