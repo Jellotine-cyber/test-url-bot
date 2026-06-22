@@ -1,35 +1,12 @@
 import { Telegraf } from 'telegraf';
-import { Redis } from '@upstash/redis';
+import Redis from 'ioredis';
 
-// --- CLEAN REDIS STRING PARSING ---
-let kv;
-const redisUrlString = process.env.REDIS_URL || '';
+// 1. Initialize Redis directly using your single connection string
+// ioredis natively understands the redis:// format completely!
+const kv = new Redis(process.env.REDIS_URL);
 
-if (redisUrlString) {
-    try {
-        // Parse the standard redis://default:password@host:port format
-        // Extracting host and password
-        const withoutProtocol = redisUrlString.replace('redis://', '');
-        const [credentials, hostPort] = withoutProtocol.split('@');
-        const password = credentials.split(':')[1];
-        
-        // Build the correct HTTP REST URL that Upstash expects
-        const restUrl = `https://${hostPort}`;
-        
-        kv = new Redis({ 
-            url: restUrl, 
-            token: password 
-        });
-    } catch (parseError) {
-        console.error('Failed to parse REDIS_URL string:', parseError);
-    }
-}
-
-// Fallback to empty client if something goes wrong to prevent complete server crash
-if (!kv) {
-    kv = Redis.fromEnv();
-}
-// ----------------------------------
+// Handle background connection errors to prevent server crash
+kv.on('error', (err) => console.error('Redis Connection Error:', err));
 
 // 2. Initialize the Telegraf bot
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -52,8 +29,8 @@ bot.command('save', async (ctx) => {
     }
 
     try {
-        // Using standard redis hash set
-        await kv.hset(`user:${ctx.chat.id}:sites`, { [nickname.toLowerCase()]: url });
+        // Save using native hash-set layout
+        await kv.hset(`user:${ctx.chat.id}:sites`, nickname.toLowerCase(), url);
         await ctx.reply(`💾 Saved shortcut *${nickname.toLowerCase()}*!`, { parse_mode: 'Markdown' });
     } catch (err) {
         await ctx.reply(`❌ Database Error: ${err.message}`);
