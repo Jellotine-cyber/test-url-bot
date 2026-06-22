@@ -54,6 +54,7 @@ bot.command('savedurl', async (ctx) => {
         await ctx.reply(`❌ Database Error: ${err.message}`);
     }
 });
+import https from 'https'; // Add this import at the very top of your api/bot.js file
 
 bot.command('check', async (ctx) => {
     try {
@@ -63,31 +64,36 @@ bot.command('check', async (ctx) => {
             return ctx.reply("No saved URLs to check. Use /save first.");
         }
 
-        await ctx.reply("🔄 Checking connection status...");
+        await ctx.reply("🔄 Running advanced network check...");
+
+        // Create an agent that bypasses strict SSL validation check failures
+        const acceptAllAgent = new https.Agent({
+            rejectUnauthorized: false
+        });
 
         const results = await Promise.all(
             Object.entries(sites).map(async ([name, url]) => {
                 try {
-                    // We set redirect to 'follow' so it completely processes the Outlook login hop
                     const res = await fetch(url, { 
                         method: 'GET', 
                         redirect: 'follow',
+                        agent: acceptAllAgent, // Apply the SSL bypass agent here
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'en-US,en;q=0.5'
                         }
                     });
 
-                    // Match your criteria: If it's explicitly 404, it's missing/dead.
                     if (res.status === 404) {
                         return `❌ Connection to *${name}* (${url}) failed: 404 Page Not Found`;
                     }
 
-                    // Treat every other response (200, 302, etc.) as a functional server sign of life
                     return `✅ Connection to *${name}* is successful! (Status: ${res.status})`;
 
                 } catch (err) {
-                    // Network level crashes (DNS failures, connection timeouts, refused connections)
-                    return `❌ Connection to *${name}* (${url}) failed: ${err.message}`;
+                    // This will tell us if it's a DNS problem, a timeout, or an IP block
+                    return `❌ Connection to *${name}* failed. Reason: \`${err.message}\``;
                 }
             })
         );
@@ -97,7 +103,32 @@ bot.command('check', async (ctx) => {
         await ctx.reply(`❌ Execution Error: ${err.message}`);
     }
 });
+// This listener maps directly to the /remove menu option you set up in BotFather
+bot.command('remove', async (ctx) => {
+    // parse command arguments: /remove nickname
+    const args = ctx.message.text.split(/\s+/);
+    const nickname = args[1];
 
+    if (!nickname) {
+        return ctx.reply("⚠️ Format: /remove [nickname]");
+    }
+
+    try {
+        const key = `user:${ctx.chat.id}:sites`;
+        const targetNickname = nickname.toLowerCase();
+
+        // hdel returns the number of fields removed (1 if found, 0 if it didn't exist)
+        const deletedCount = await kv.hdel(key, targetNickname);
+
+        if (deletedCount === 0) {
+            return ctx.reply(`❓ Shortcut *${targetNickname}* was not found in your list.`, { parse_mode: 'Markdown' });
+        }
+
+        await ctx.reply(`🗑️ Successfully deleted shortcut *${targetNickname}*!`, { parse_mode: 'Markdown' });
+    } catch (err) {
+        await ctx.reply(`❌ Database Error: ${err.message}`);
+    }
+});
 // --- VERCEL SERVERLESS WEBHOOK HANDLER ---
 
 export default async function handler(req, res) {
