@@ -54,10 +54,6 @@ bot.command('savedurl', async (ctx) => {
         await ctx.reply(`❌ Database Error: ${err.message}`);
     }
 });
-import https from 'https'; // Add this import at the very top of your api/bot.js file
-
-import net from 'net'; // Add this import at the very top of your api/bot.js file
-
 bot.command('check', async (ctx) => {
     try {
         const sites = await kv.hgetall(`user:${ctx.chat.id}:sites`);
@@ -66,49 +62,46 @@ bot.command('check', async (ctx) => {
             return ctx.reply("No saved URLs to check. Use /save first.");
         }
 
-        await ctx.reply("📡 Running raw TCP port connectivity test...");
+        await ctx.reply("📡 Checking specific application paths via redirection tracking...");
 
         const results = await Promise.all(
             Object.entries(sites).map(async ([name, urlString]) => {
-                return new Promise((resolve) => {
-                    try {
-                        // 1. Clean and parse the URL to extract the hostname
-                        let cleanUrl = urlString.trim();
-                        if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-                            cleanUrl = 'https://' + cleanUrl;
-                        }
-                        
-                        const parsedUrl = new URL(cleanUrl);
-                        const host = parsedUrl.hostname;
-                        // Default to port 443 for https, or 80 for http
-                        const port = parsedUrl.port ? parseInt(parsedUrl.port) : (parsedUrl.protocol === 'https:' ? 443 : 80);
-
-                        // 2. Open a raw TCP socket connection (Just like Test-NetConnection)
-                        const socket = new net.Socket();
-                        
-                        // Set a strict 7-second timeout so the serverless function doesn't hang
-                        socket.setTimeout(7000);
-
-                        socket.connect(port, host, () => {
-                            // If this triggers, the port is open and reachable!
-                            socket.destroy(); 
-                            resolve(`✅ *${name}* (${host}:${port}) is online! TCP connection succeeded.`);
-                        });
-
-                        socket.on('error', (err) => {
-                            socket.destroy();
-                            resolve(`❌ *${name}* (${host}:${port}) failed. Reason: \`${err.message}\``);
-                        });
-
-                        socket.on('timeout', () => {
-                            socket.destroy();
-                            resolve(`❌ *${name}* (${host}:${port}) failed. Reason: \`Connection Timeout (Blocked)\``);
-                        });
-
-                    } catch (err) {
-                        resolve(`❌ *${name}* invalid URL format: \`${err.message}\``);
+                try {
+                    let cleanUrl = urlString.trim();
+                    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                        cleanUrl = 'https://' + cleanUrl;
                     }
-                });
+
+                    // Direct request from Vercel's Singapore engine
+                    const res = await fetch(cleanUrl, {
+                        method: 'GET',
+                        redirect: 'manual', // CRITICAL: Tells the engine NOT to follow the loop
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                        }
+                    });
+
+                    // Log the status code (Vercel returns status 0 or 301/302/307 for manual redirects)
+                    // If the status is between 300 and 399, or if Node fetch abstracts it as type: 'opaqueredirect' (status 0)
+                    const isRedirect = (res.status >= 300 && res.status < 400) || res.type === 'opaqueredirect' || res.status === 401;
+
+                    if (res.status === 200) {
+                        return `✅ Application *${name}* is fully active and accessible! (Status: 200)`;
+                    } 
+                    
+                    if (isRedirect) {
+                        // Get the forwarding destination if visible
+                        const targetLocation = res.headers.get('location') || 'Identity Provider Gateway';
+                        return `✅ Application *${name}* is **UP and running**! (Verified via secure redirect to: \`${targetLocation}\`)`;
+                    }
+
+                    // If it drops past the redirect layer into a server fault
+                    return `❌ Application *${name}* failed with Status: \`${res.status}\``;
+
+                } catch (err) {
+                    return `❌ Connection to *${name}* failed: \`${err.message}\``;
+                }
             })
         );
 
