@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
+    "@upstash/redis": "^1.38.0",
     "redis": "^6.0.0",
-    "@vercel/kv": "^1.0.1",
     "telegraf": "^4.16.3"
   }
 }
