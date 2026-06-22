@@ -64,36 +64,38 @@ bot.command('check', async (ctx) => {
             return ctx.reply("No saved URLs to check. Use /save first.");
         }
 
-        await ctx.reply("🔄 Running advanced network check...");
-
-        // Create an agent that bypasses strict SSL validation check failures
-        const acceptAllAgent = new https.Agent({
-            rejectUnauthorized: false
-        });
+        await ctx.reply("🔄 Checking connection status via cloud proxy...");
 
         const results = await Promise.all(
             Object.entries(sites).map(async ([name, url]) => {
                 try {
-                    const res = await fetch(url, { 
-                        method: 'GET', 
-                        redirect: 'follow',
-                        agent: acceptAllAgent, // Apply the SSL bypass agent here
+                    // Route the URL through a free public proxy wrapper to mask Vercel's IP
+                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+                    
+                    const res = await fetch(proxyUrl, {
+                        method: 'GET',
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                            'Accept-Language': 'en-US,en;q=0.5'
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                         }
                     });
 
-                    if (res.status === 404) {
+                    if (!res.ok) {
+                        return `❌ Connection to *${name}* failed: Proxy server error (${res.status})`;
+                    }
+
+                    const data = await res.json();
+                    
+                    // AllOrigins wraps the final target response status in data.status
+                    const finalStatus = data.status ? data.status.http_code : 200;
+
+                    if (finalStatus === 404) {
                         return `❌ Connection to *${name}* (${url}) failed: 404 Page Not Found`;
                     }
 
-                    return `✅ Connection to *${name}* is successful! (Status: ${res.status})`;
+                    return `✅ Connection to *${name}* is successful! (Status: ${finalStatus})`;
 
                 } catch (err) {
-                    // This will tell us if it's a DNS problem, a timeout, or an IP block
-                    return `❌ Connection to *${name}* failed. Reason: \`${err.message}\``;
+                    return `❌ Connection to *${name}* failed: \`${err.message}\``;
                 }
             })
         );
@@ -103,6 +105,7 @@ bot.command('check', async (ctx) => {
         await ctx.reply(`❌ Execution Error: ${err.message}`);
     }
 });
+
 // This listener maps directly to the /remove menu option you set up in BotFather
 bot.command('remove', async (ctx) => {
     // parse command arguments: /remove nickname
